@@ -1,0 +1,12 @@
+events/*
+database/*
+compiled_data/*
+gDrive_backup/*
+.idea/
+.DS_Store
+geckodriver.log
+*.sqlite
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
