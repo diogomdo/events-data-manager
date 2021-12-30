@@ -6,7 +6,7 @@ import datetime
 from datetime import datetime
 
 now = datetime.now()
-path = "events/10"
+path = "../data/events/10"
 COMPILED_DATA_PATH = "compiled_data"
 TIME_FORMAT = "%H:%M:%S"
 DATE_FORMAT = "%d-%m-%Y"

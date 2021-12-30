@@ -1,7 +1,7 @@
-events/*
-database/*
-compiled_data/*
-gDrive_backup/*
+data/events/*
+*.db
+data_compiler/compiled_data/*
+data/gDrive_backup/*
 .idea/
 .DS_Store
 geckodriver.log
