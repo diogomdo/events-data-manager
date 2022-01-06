@@ -2,6 +2,7 @@ import datetime
 import difflib
 import re
 import time
+from typing import Union
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -10,7 +11,6 @@ from webdriver_manager.firefox import GeckoDriverManager
 
 from data import select_games_from_team, insert_op_name, insert_result_game, get_op_team_name, get_teams_with_games, \
     get_op_id
-
 # Globals
 from extractor.op_element import OP_Element, Element_Type, cached_op_results
 
@@ -276,7 +276,21 @@ def calculate_match_date(date: datetime) -> datetime:
     return match_date
 
 
-def navigator_page(team_name, match_date_time, opponent, cached_op_results) -> bool:
+def is_element_in_cache(element):
+    return next(filter(lambda x: element == x, cached_op_results), False)
+
+
+def event_has_correspondence(team, opponent, match_date_time):
+    for x in cached_op_results:
+        if difflib.SequenceMatcher(None, team, x.teams).ratio() > 0.4 and \
+                difflib.SequenceMatcher(None, opponent, x.teams).ratio() > 0.4 and \
+                match_date_time == x.date:
+            return x
+    else:
+        return False
+
+
+def navigator_page(team_name, match_date_time, opponent) -> Union[OP_Element, bool]:
     result_match = True
     page: int = 1
 
@@ -287,19 +301,19 @@ def navigator_page(team_name, match_date_time, opponent, cached_op_results) -> b
             element = OP_Element(element_details=extract_row_details(row), page=page)
             if element.type is not Element_Type.SEPARATOR:
                 # Add to cache pool
-                cached_op_results.append(element)  # Add a comparator to guarantee to add unique matches in the append of cached_op_results
-                # Evaluate if match from op is the same as from db
-                # save result
-
-                pass
+                if not is_element_in_cache(element):
+                    cached_op_results.append(element)
         else:
-            page = page + 1
-            check_next_page()
-
+            is_match = event_has_correspondence(team_name, opponent, match_date_time)
+            if isinstance(is_match, OP_Element):
+                return is_match
+            else:
+                page = page + 1
+                check_next_page()
     return False
 
 
-def verify_team_match(team, match_date_time, opponent, cached_op_results):
+def verify_team_match(team, match_date_time, opponent):
     while True:
         table_rows = driver.find_elements_by_xpath(
             '/html/body/div[1]/div/div[2]/div[6]/div[1]/div/div[1]/div[2]/div[1]/div/table/tbody/tr')
@@ -337,11 +351,12 @@ def verify_team_match(team, match_date_time, opponent, cached_op_results):
                 return False
 
 
-def save_data(team_id="", opponent_team_id="", game_id=""):
+def save_data(team_id="", opponent_team_id="", game_id="", result=None):
     global op_opponent_team_name, op_team_name, match_result
     print("Data to save: Odds Portal alias '{}' - Opponent Odds Portal alias '{}' - result: '{}'".format(op_team_name,
                                                                                                          op_opponent_team_name,
                                                                                                          match_result))
+
     if op_team_name:
         insert_op_name(op_team_name=op_team_name, team_id=team_id)
 
@@ -364,7 +379,7 @@ def load_team_matches(team_id):
     return select_games_from_team(team_id)
 
 
-def by_quick_link(match, match_date_time, cached_op_results) -> bool:
+def by_quick_link(match, match_date_time) -> bool:
     op_id = get_op_id(team_id=match["team_id"])
 
     link = "https://www.oddsportal.com/search/results/" + op_id + "/"
@@ -372,19 +387,20 @@ def by_quick_link(match, match_date_time, cached_op_results) -> bool:
 
     if is_team_page():
         print("In team page.")
-        if navigator_page(
-                team_name=match["team_name"],
-                match_date_time=match_date_time,
-                opponent=match["opponent_name"],
-                cached_op_results=cached_op_results):
-            save_data(game_id=match["game_id"], team_id=match["team_id"], opponent_team_id=match["opponent_id"])
+        result = navigator_page(
+            team_name=match["team_name"],
+            match_date_time=match_date_time,
+            opponent=match["opponent_name"])
+        if result:
+            save_data(game_id=match["game_id"], team_id=match["team_id"], opponent_team_id=match["opponent_id"],
+                      result=result)
             return True
     else:
         print("Quick link not sufficient.")
         return False
 
 
-def by_search_box(match, match_date_time, cached_op_results) -> bool:
+def by_search_box(match, match_date_time) -> bool:
     if search_team(match["team_name"], match["team_id"]):
         print("OP team name: {}".format(op_team_name))
         if verify_team_match(match["team_name"], match_date_time, match["opponent_name"]):
@@ -395,8 +411,13 @@ def by_search_box(match, match_date_time, cached_op_results) -> bool:
         return False
 
 
-def verify_in_cached_results(match: str, match_date_time, cached_op_results) -> bool:
-    pass
+def verify_in_cached_results(match: dict, match_date_time) -> bool:
+    is_match = event_has_correspondence(match["team_name"], match["opponent_name"], match_date_time)
+
+    if isinstance(is_match, OP_Element):
+        save_data(game_id=match["game_id"], team_id=match["team_id"], opponent_team_id=match["opponent_id"],
+                  result=is_match)
+        return True
 
 
 def scrape_search_result():
@@ -424,15 +445,14 @@ def scrape_search_result():
             if cached_op_results:
                 if verify_in_cached_results(
                         match=match,
-                        match_date_time=match_date_time,
-                        cached_op_results=cached_op_results):
-                    pass
+                        match_date_time=match_date_time):
+                    continue
 
-            if by_quick_link(match=match, match_date_time=match_date_time, cached_op_results=cached_op_results):
-                pass
+            if by_quick_link(match=match, match_date_time=match_date_time):
+                continue
 
-            if by_search_box(match=match, match_date_time=match_date_time, cached_op_results=cached_op_results):
-                pass
+            if by_search_box(match=match, match_date_time=match_date_time):
+                continue
 
 
 scrape_search_result()

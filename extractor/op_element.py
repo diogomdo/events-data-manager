@@ -34,6 +34,13 @@ class OP_Element(object):
         else:
             self.type = Element_Type.MATCH
 
+    def __eq__(self, other):
+        if not isinstance(other, OP_Element):
+            # don't attempt to compare against unrelated types
+            return NotImplemented
+
+        return self.date == other.date and self.teams == other.teams
+
 
 def convert_date(date: str) -> datetime:
     date = datetime.strptime(date, "%d/%m, %H:%M")
