@@ -3,7 +3,6 @@ from sqlite3 import Error
 
 import pandas as pd
 
-
 # conn = sqlite3.connect("database/events-data.db")
 #
 # df = pd.read_csv(r'compiled_data/teams-export-08-12-2021_19:14:51.csv', sep=';')
@@ -14,6 +13,7 @@ import pandas as pd
 #
 # odds_ = pd.read_csv(r'compiled_data/odds-export-08-12-2021_19:14:51.csv', sep=';')
 # odds_.to_sql('odds', con, if_exists='append', index=False)
+from extractor.db_element import DB_Element
 
 PATH = "/Users/diogo.oliveira/dev/own/events-data-manager/database/events-data.db"
 
@@ -58,16 +58,7 @@ def select_games_from_team(team_id):
         matches_list = []
         if rows:
             for row in rows:
-                matches_list.append(
-                    {"opponent_id": row[0],
-                     "opponent_name": row[1],
-                     "game_id": row[2],
-                     "team_name": row[3],
-                     "team_id": row[4],
-                     "match_date": row[5],
-                     "match_time": row[6]
-                     }
-                )
+                matches_list.append(DB_Element(db_data=row))
 
         print(matches_list)
         return matches_list

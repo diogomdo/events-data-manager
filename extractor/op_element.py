@@ -14,9 +14,11 @@ class Element_Type(Enum):
 
 class OP_Element(object):
     result: str = ""
-    teams: list = []
+    teams: str = ""
     date: datetime = datetime
     type: Element_Type
+    main_team_name: str = ""
+    opposition_name: str = ""
     page: int
 
     def __init__(self, element_details: [] = None, page: int = 0):
@@ -26,7 +28,7 @@ class OP_Element(object):
         if self.type is Element_Type.MATCH:
             self.date = convert_date(element_details[0])
             self.teams = element_details[1]
-            self.result = element_details[2]
+            self.result = extract_result(element_details[2])
 
     def eval_element_type(self, element_details):
         if SEPARATOR_IDENTIFIER in element_details[0]:
@@ -40,6 +42,22 @@ class OP_Element(object):
             return NotImplemented
 
         return self.date == other.date and self.teams == other.teams
+
+    def is_element(self, element):
+        return self.main_team_name not in element
+
+    def extract_opponent(self, game):
+        teams_list = game.replace(" - ", ",").split(",")
+        r = list(filter(self.is_element, teams_list))
+        return r[0].strip()
+
+
+def extract_result(data):
+    result = data.split(":")
+    if result[0] == result[1]:
+        return "W"
+    else:
+        return "L"
 
 
 def convert_date(date: str) -> datetime:

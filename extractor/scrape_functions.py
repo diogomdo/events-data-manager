@@ -12,6 +12,7 @@ from webdriver_manager.firefox import GeckoDriverManager
 from data import select_games_from_team, insert_op_name, insert_result_game, get_op_team_name, get_teams_with_games, \
     get_op_id
 # Globals
+from extractor.db_element import DB_Element
 from extractor.op_element import OP_Element, Element_Type, cached_op_results
 
 op_team_name = ''
@@ -165,13 +166,21 @@ def get_opponent_name(op_opponent, pl_opponent):
         return True
 
 
-def is_element(element):
+def is_element(element, home_team=""):
+    if home_team:
+        op_team_name = home_team
+
     return op_team_name not in element
 
 
-def extract_opponent(game):
-    teams_list = game[1].replace(" - ", ",").split(",")
-    r = list(filter(is_element, teams_list))
+def extract_opponent(game, main_team=""):
+    if isinstance(game, list):
+        teams_list = game[1].replace(" - ", ",").split(",")
+    elif isinstance(game, str):
+        teams_list = game.replace(" - ", ",").split(",")
+
+    r = list(filter(lambda element: is_element(element, main_team), teams_list))
+    # r = list(filter(is_element, teams_list))
     return r[0].strip()
 
 
@@ -280,17 +289,17 @@ def is_element_in_cache(element):
     return next(filter(lambda x: element == x, cached_op_results), False)
 
 
-def event_has_correspondence(team, opponent, match_date_time):
-    for x in cached_op_results:
-        if difflib.SequenceMatcher(None, team, x.teams).ratio() > 0.4 and \
-                difflib.SequenceMatcher(None, opponent, x.teams).ratio() > 0.4 and \
-                match_date_time == x.date:
-            return x
+def event_has_correspondence(match: DB_Element) -> Union[OP_Element, bool]:
+    for op_match in cached_op_results:
+        if difflib.SequenceMatcher(None, match.main_team_name, op_match.teams).ratio() > 0.4 and \
+                difflib.SequenceMatcher(None, match.opponent_name, op_match.teams).ratio() > 0.4 and \
+                match.match_date_time == op_match.date:
+            return op_match
     else:
         return False
 
 
-def navigator_page(team_name, match_date_time, opponent) -> Union[OP_Element, bool]:
+def navigator_page(match: DB_Element) -> Union[OP_Element, bool]:
     result_match = True
     page: int = 1
 
@@ -304,7 +313,7 @@ def navigator_page(team_name, match_date_time, opponent) -> Union[OP_Element, bo
                 if not is_element_in_cache(element):
                     cached_op_results.append(element)
         else:
-            is_match = event_has_correspondence(team_name, opponent, match_date_time)
+            is_match = event_has_correspondence(match=match)
             if isinstance(is_match, OP_Element):
                 return is_match
             else:
@@ -351,20 +360,19 @@ def verify_team_match(team, match_date_time, opponent):
                 return False
 
 
-def save_data(team_id="", opponent_team_id="", game_id="", result=None):
+def save_data(db_match: DB_Element, op_match: OP_Element = None):
     global op_opponent_team_name, op_team_name, match_result
-    print("Data to save: Odds Portal alias '{}' - Opponent Odds Portal alias '{}' - result: '{}'".format(op_team_name,
-                                                                                                         op_opponent_team_name,
-                                                                                                         match_result))
+
+    setattr(op_match, "opposition_name", extract_opponent(game=op_match.teams, main_team=op_match.main_team_name))
 
     if op_team_name:
-        insert_op_name(op_team_name=op_team_name, team_id=team_id)
+        insert_op_name(op_team_name=op_team_name, team_id=db_match.main_team_id)
 
     if op_opponent_team_name:
-        insert_op_name(op_team_name=op_opponent_team_name, team_id=opponent_team_id)
+        insert_op_name(op_team_name=op_opponent_team_name, team_id=db_match.opponent_id)
 
     if match_result:
-        insert_result_game(game_id=game_id, result=match_result)
+        insert_result_game(game_id=db_match.game_id, result=match_result)
 
     op_opponent_team_name = ""
     op_team_name = ""
@@ -379,44 +387,42 @@ def load_team_matches(team_id):
     return select_games_from_team(team_id)
 
 
-def by_quick_link(match, match_date_time) -> bool:
-    op_id = get_op_id(team_id=match["team_id"])
+def by_quick_link(match: DB_Element) -> bool:
+    op_id = get_op_id(team_id=match.main_team_id)
 
     link = "https://www.oddsportal.com/search/results/" + op_id + "/"
     driver.get(link)
 
     if is_team_page():
         print("In team page.")
-        result = navigator_page(
-            team_name=match["team_name"],
-            match_date_time=match_date_time,
-            opponent=match["opponent_name"])
+        home_team_name = driver.find_element_by_xpath("//*[@id='search-match']").get_attribute("value")
+
+        result = navigator_page(match=match)
         if result:
-            save_data(game_id=match["game_id"], team_id=match["team_id"], opponent_team_id=match["opponent_id"],
-                      result=result)
+            setattr(result, "home", home_team_name)
+            save_data(db_match=match, op_match=result)
             return True
     else:
         print("Quick link not sufficient.")
         return False
 
 
-def by_search_box(match, match_date_time) -> bool:
+def by_search_box(match) -> bool:
     if search_team(match["team_name"], match["team_id"]):
         print("OP team name: {}".format(op_team_name))
-        if verify_team_match(match["team_name"], match_date_time, match["opponent_name"]):
-            save_data(game_id=match["game_id"], team_id=match["team_id"], opponent_team_id=match["opponent_id"])
+        if verify_team_match(match["team_name"], match["opponent_name"]):
+            save_data(db_match=match)
             return True
     else:
         print("Run ended for team: {}".format(match["team_name"]))
         return False
 
 
-def verify_in_cached_results(match: dict, match_date_time) -> bool:
-    is_match = event_has_correspondence(match["team_name"], match["opponent_name"], match_date_time)
+def verify_in_cached_results(match: DB_Element) -> bool:
+    op_match = event_has_correspondence(match=match)
 
-    if isinstance(is_match, OP_Element):
-        save_data(game_id=match["game_id"], team_id=match["team_id"], opponent_team_id=match["opponent_id"],
-                  result=is_match)
+    if op_match:
+        save_data(db_match=match, op_match=op_match)
         return True
 
 
@@ -440,18 +446,14 @@ def scrape_search_result():
         driver.get(link)
 
         for match in team_matches:
-            match_date_time = datetime.datetime.strptime(", ".join([match["match_date"], match["match_time"]]),
-                                                         "%Y-%m-%d, %H:%M:%S")
             if cached_op_results:
-                if verify_in_cached_results(
-                        match=match,
-                        match_date_time=match_date_time):
+                if verify_in_cached_results(match=match):
                     continue
 
-            if by_quick_link(match=match, match_date_time=match_date_time):
+            if by_quick_link(match=match):
                 continue
 
-            if by_search_box(match=match, match_date_time=match_date_time):
+            if by_search_box(match=match):
                 continue
 
 
