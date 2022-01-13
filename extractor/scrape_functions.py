@@ -21,6 +21,15 @@ initial_page_number = 1
 match_result = ''
 
 
+class NoMatchFound(Exception):
+    pass
+
+
+class NoQuickLink(Exception):
+    print("No quick link for this team!")
+    pass
+
+
 def is_zero_results_page():
     try:
         archive_results = driver.find_element_by_xpath("/html/body/div[1]/div/div[2]/div[6]/div[1]/div/div[1]/div["
@@ -90,7 +99,7 @@ def search_box_operation(team):
                                  '1]/form/div/div/div/button/span/span').click()
 
 
-def search_team(team_name="", team_id=""):
+def search_team(team_name: str, team_id: str):
     try:
         global op_team_name
         r = get_op_team_name(team_id=team_id)
@@ -166,20 +175,15 @@ def get_opponent_name(op_opponent, pl_opponent):
         return True
 
 
-def is_element(element, home_team=""):
-    if home_team:
-        op_team_name = home_team
-
-    return op_team_name not in element
-
-
 def extract_opponent(game, main_team=""):
+    teams_list: list = []
     if isinstance(game, list):
         teams_list = game[1].replace(" - ", ",").split(",")
     elif isinstance(game, str):
         teams_list = game.replace(" - ", ",").split(",")
 
-    r = list(filter(lambda element: is_element(element, main_team), teams_list))
+    r = list(filter(lambda element: element != main_team, teams_list))
+    # r = list(filter(lambda element: is_element(element, main_team), teams_list))
     # r = list(filter(is_element, teams_list))
     return r[0].strip()
 
@@ -204,8 +208,10 @@ def evaluate_game_match(game_data, opponent):
 
 
 def check_next_page():
+    # TODO add generic page changer
     next_page_link = driver.find_element_by_xpath(
-        "/html/body/div[1]/div/div[2]/div[6]/div[1]/div/div[1]/div[2]/div[1]/div/div[2]/a[13]").get_attribute('href')
+        "/html/body/div[1]/div/div[2]/div[6]/div[1]/div/div[1]/div[2]/div[1]/div/div[2]/a[8]").get_attribute('href')
+
     driver.get(next_page_link)
 
 
@@ -299,11 +305,20 @@ def event_has_correspondence(match: DB_Element) -> Union[OP_Element, bool]:
         return False
 
 
+def get_last_page() -> int:
+    last_page = driver.find_element_by_xpath(
+        "/html/body/div[1]/div/div[2]/div[6]/div[1]/div/div[1]/div[2]/div[1]/div/div[2]/a[9]").get_attribute("x-page")
+    return int(last_page)
+
+
 def navigator_page(match: DB_Element) -> Union[OP_Element, bool]:
     result_match = True
     page: int = 1
-
-    while result_match:
+    last_page_number: int = get_last_page()
+    while result_match :
+        # TODO Add condition to skip match if all pages are covered but without any result
+        if page > last_page_number:
+            raise NoMatchFound
         table_rows = driver.find_elements_by_xpath(
             '/html/body/div[1]/div/div[2]/div[6]/div[1]/div/div[1]/div[2]/div[1]/div/table/tbody/tr')
         for row in table_rows:
@@ -322,7 +337,7 @@ def navigator_page(match: DB_Element) -> Union[OP_Element, bool]:
     return False
 
 
-def verify_team_match(team, match_date_time, opponent):
+def verify_team_match(match: DB_Element):
     while True:
         table_rows = driver.find_elements_by_xpath(
             '/html/body/div[1]/div/div[2]/div[6]/div[1]/div/div[1]/div[2]/div[1]/div/table/tbody/tr')
@@ -333,7 +348,7 @@ def verify_team_match(team, match_date_time, opponent):
         match_year = find_site_match_year(match_list=table_rows)
         last_game_date = last_game_date.replace(year=match_year)
 
-        if go_to_next_page(match_date=match_date_time, last_match_date=last_game_date):
+        if go_to_next_page(match_date=match.match_date_time, last_match_date=last_game_date):
             # IMPORTANT the match year from the last match page must be persisted for the next match in the next page
             # until a new separator is detected
             check_next_page()
@@ -349,8 +364,8 @@ def verify_team_match(team, match_date_time, opponent):
                     op_match_date_time = datetime.datetime.strptime(game_data[0], "%d/%m, %H:%M")
 
                     op_match_date_time = op_match_date_time.replace(year=match_year)
-                    if evaluate_date_match(match_date=match_date_time, op_match_date=op_match_date_time):
-                        evaluate_game_match(game_data=game_data, opponent=opponent)
+                    if evaluate_date_match(match_date=match.match_date_time, op_match_date=op_match_date_time):
+                        evaluate_game_match(game_data=game_data, opponent=match.opponent_name)
                         if match_result:
                             return True
                         else:
@@ -365,18 +380,10 @@ def save_data(db_match: DB_Element, op_match: OP_Element = None):
 
     setattr(op_match, "opposition_name", extract_opponent(game=op_match.teams, main_team=op_match.main_team_name))
 
-    if op_team_name:
-        insert_op_name(op_team_name=op_team_name, team_id=db_match.main_team_id)
-
-    if op_opponent_team_name:
-        insert_op_name(op_team_name=op_opponent_team_name, team_id=db_match.opponent_id)
-
-    if match_result:
+    if op_match.main_team_name and op_match.opposition_name and op_match.result:
+        insert_op_name(op_team_name=op_match.main_team_name, team_id=db_match.main_team_id)
+        insert_op_name(op_team_name=op_match.opposition_name, team_id=db_match.opponent_id)
         insert_result_game(game_id=db_match.game_id, result=match_result)
-
-    op_opponent_team_name = ""
-    op_team_name = ""
-    match_result = ""
 
 
 def load_games():
@@ -389,6 +396,8 @@ def load_team_matches(team_id):
 
 def by_quick_link(match: DB_Element) -> bool:
     op_id = get_op_id(team_id=match.main_team_id)
+    if not op_id:
+        raise NoQuickLink
 
     link = "https://www.oddsportal.com/search/results/" + op_id + "/"
     driver.get(link)
@@ -399,7 +408,7 @@ def by_quick_link(match: DB_Element) -> bool:
 
         result = navigator_page(match=match)
         if result:
-            setattr(result, "home", home_team_name)
+            setattr(result, "main_team_name", home_team_name)
             save_data(db_match=match, op_match=result)
             return True
     else:
@@ -407,10 +416,10 @@ def by_quick_link(match: DB_Element) -> bool:
         return False
 
 
-def by_search_box(match) -> bool:
-    if search_team(match["team_name"], match["team_id"]):
+def by_search_box(match: DB_Element) -> bool:
+    if search_team(team_name=match.main_team_name, team_id=match.main_team_id):
         print("OP team name: {}".format(op_team_name))
-        if verify_team_match(match["team_name"], match["opponent_name"]):
+        if verify_team_match(match=match):
             save_data(db_match=match)
             return True
     else:
@@ -420,7 +429,8 @@ def by_search_box(match) -> bool:
 
 def verify_in_cached_results(match: DB_Element) -> bool:
     op_match = event_has_correspondence(match=match)
-
+    home_team_name = driver.find_element_by_xpath("//*[@id='search-match']").get_attribute("value")
+    setattr(op_match, "main_team_name", home_team_name)
     if op_match:
         save_data(db_match=match, op_match=op_match)
         return True
@@ -445,13 +455,20 @@ def scrape_search_result():
         team_matches = load_team_matches(match_id[0])
         driver.get(link)
 
+        cached_op_results = []
+
         for match in team_matches:
             if cached_op_results:
                 if verify_in_cached_results(match=match):
                     continue
-
-            if by_quick_link(match=match):
+            try:
+                if by_quick_link(match=match):
+                    continue
+            except NoMatchFound:
+                print("No match was found for this event!")
                 continue
+            except NoQuickLink:
+                pass
 
             if by_search_box(match=match):
                 continue
