@@ -1,3 +1,4 @@
+import difflib
 from datetime import datetime
 from enum import Enum
 
@@ -21,7 +22,7 @@ class OP_Element(object):
     opposition_name: str = ""
     page: int
 
-    def __init__(self, element_details: [] = None, page: int = 0):
+    def __init__(self, element_details: [] = None, main_team: str = "", page: int = 0):
         self.eval_element_type(element_details=element_details)
         self.page = page
 
@@ -29,6 +30,17 @@ class OP_Element(object):
             self.date = convert_date(element_details[0])
             self.teams = element_details[1]
             self.result = extract_result(element_details[2])
+
+            if main_team:
+                self.main_team_name = main_team
+                self.unmarshall_teams()
+
+    def unmarshall_teams(self):
+        # TODO Refactor discarding the main team in list and blindly assign the opposition
+        for t in self.teams.split(" - "):
+            diff = difflib.SequenceMatcher(None, t, self.main_team_name).ratio()
+            if diff < 0.6:
+                self.opposition_name = t.rstrip("\n").rstrip()
 
     def eval_element_type(self, element_details):
         if SEPARATOR_IDENTIFIER in element_details[0]:
@@ -54,13 +66,25 @@ class OP_Element(object):
 
 def extract_result(data):
     result = data.split(":")
-    if result[0] == result[1]:
-        return "W"
-    else:
-        return "L"
+    try:
+        if result[0] == result[1]:
+            return "W"
+        else:
+            return "L"
+    except Exception:
+        print("Invalid result format from data: '{}'.".format(data))
+        return result
 
 
 def convert_date(date: str) -> datetime:
+    if "Today" in date:
+        d = date.split(",")
+        today = datetime.now().today().date()
+        date = str(today.day) + "/" + str(today.month) + "," + d[1]
+    if "Yest." in date:
+        d = date.split(",")
+        today = datetime.now().today().date()
+        date = str(today.day - 1) + "/" + str(today.month) + "," + d[1]
     date = datetime.strptime(date, "%d/%m, %H:%M")
     year = find_year(date)
     return date.replace(year=year)
@@ -87,6 +111,9 @@ def count_month_occurrences(event_month: int):
             counter = counter + 1
 
     if event_month == 12 and l[-1] != 12:
+        counter = counter + 1
+
+    if event_month != 12 and not 12 in l and event_month > datetime.now().date().month:
         counter = counter + 1
 
     return counter
