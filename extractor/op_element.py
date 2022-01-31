@@ -1,4 +1,4 @@
-import difflib
+import re
 from datetime import datetime
 from enum import Enum
 
@@ -6,6 +6,10 @@ from enum import Enum
 
 SEPARATOR_IDENTIFIER = "Soccer"
 cached_op_results: list = []
+
+
+class AssignTeamsException(Exception):
+    print("Problem identifying teams name.")
 
 
 class Element_Type(Enum):
@@ -33,14 +37,7 @@ class OP_Element(object):
 
             if main_team:
                 self.main_team_name = main_team
-                self.unmarshall_teams()
-
-    def unmarshall_teams(self):
-        # TODO Refactor discarding the main team in list and blindly assign the opposition
-        for t in self.teams.split(" - "):
-            diff = difflib.SequenceMatcher(None, t, self.main_team_name).ratio()
-            if diff < 0.6:
-                self.opposition_name = t.rstrip("\n").rstrip()
+                self.opposition_name = self.find_oppositor_team()
 
     def eval_element_type(self, element_details):
         if SEPARATOR_IDENTIFIER in element_details[0]:
@@ -55,13 +52,20 @@ class OP_Element(object):
 
         return self.date == other.date and self.teams == other.teams
 
-    def is_element(self, element):
-        return self.main_team_name not in element
-
-    def extract_opponent(self, game):
-        teams_list = game.replace(" - ", ",").split(",")
-        r = list(filter(self.is_element, teams_list))
-        return r[0].strip()
+    def find_oppositor_team(self):
+        teams = self.teams.split(" - ")
+        for i, t in enumerate(teams):
+            t = re.search(r"^[^(]*", t)[0].strip()
+            if self.main_team_name == t or self.main_team_name in t:
+                if i == 1:
+                    return re.search(r"^[^(]*", teams[0])[0].strip()
+                    break
+                else:
+                    return re.search(r"^[^(]*", teams[1])[0].strip()
+                    break
+            else:
+                return t
+                break
 
 
 def extract_result(data):

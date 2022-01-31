@@ -1,4 +1,3 @@
-import difflib
 import time
 from typing import Union
 
@@ -70,31 +69,14 @@ def search_team(team_name: str, team_id: str):
         return False
 
 
-def extract_opponent(game, main_team=""):
-    teams_list: list = []
-    if isinstance(game, list):
-        teams_list = game[1].replace(" - ", ",").split(",")
-    elif isinstance(game, str):
-        teams_list = game.replace(" - ", ",").split(",")
-
-    r = list(filter(lambda element: element != main_team, teams_list))
-    # r = list(filter(lambda element: is_element(element, main_team), teams_list))
-    # r = list(filter(is_element, teams_list))
-    return r[0].strip()
-
-
 def is_element_in_cache(element):
     return next(filter(lambda x: element == x, cached_op_results), False)
 
 
 def event_has_correspondence(match: DB_Element) -> Union[OP_Element, bool]:
     for op_match in cached_op_results:
-        # TODO Review this condition with the new parameters in op element
         if match.match_date_time == op_match.date:
             print("Date matched for event: " + op_match.teams)
-            print("Is op name in db oppositor name: " + op_match.opposition_name in match.opponent_name)
-            print("Diff: " +
-                  str(difflib.SequenceMatcher(None, match.opponent_name, op_match.opposition_name).ratio()))
             return op_match
     else:
         return False
@@ -109,7 +91,10 @@ def navigator_stopper(match_date):
 def solve_main_team_alias(table: list) -> str:
     # Add mechanism to check the main team alias within couple rows to certify the alias.
     # can be 3 or 4 match rows, but it raise the separator problem.
-    return table[1].find_element_by_css_selector("span[class='bold']").text
+    name = ""
+    for e in table[1].find_elements_by_css_selector("span[class='bold']"):
+        name = name + " " + e.text
+    return name
 
 
 def navigator_page(match: DB_Element) -> Union[OP_Element, bool]:
@@ -127,7 +112,7 @@ def navigator_page(match: DB_Element) -> Union[OP_Element, bool]:
         main_team_op_name = solve_main_team_alias(table_rows)
 
         for row in table_rows:
-            element = OP_Element(element_details=extract_row_details(row), main_team=main_team_op_name, page=page)
+            element = OP_Element(element_details=extract_row_details(row), main_team=main_team_op_name.strip(), page=page)
             if element.type is not Element_Type.SEPARATOR:
                 if not is_element_in_cache(element):
                     cached_op_results.append(element)
@@ -143,6 +128,8 @@ def navigator_page(match: DB_Element) -> Union[OP_Element, bool]:
 
 
 def save_data(db_match: DB_Element, op_match: OP_Element = None):
+    print(op_match)
+    print(db_match)
     if op_match.main_team_name and op_match.opposition_name and op_match.result:
         insert_op_name(op_team_name=op_match.main_team_name, team_id=db_match.main_team_id)
         insert_op_name(op_team_name=op_match.opposition_name, team_id=db_match.opponent_id)
