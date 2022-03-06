@@ -77,16 +77,25 @@ def is_zero_results_page(driver):
         return False
 
 
-def select_team_page(team, driver):
+def select_team_page(search_name, team, driver):
     try:
         table_rows = driver.find_elements_by_xpath('/html/body/div[1]/div/div[2]/div[6]/div[1]/div/div[1]/div[2]/div['
                                                    '1]/div/table/tbody/tr')
+
+        r = []
         for row in table_rows:
-            team_data = extract_row_details(row)
-            # TODO the or condition checks the search term and the team name
-            if difflib.SequenceMatcher(None, team_data[0], team).ratio() > 0.75 or team in team_data[0]:
-                driver.get(row.find_element_by_xpath(".//*[self::a]").get_attribute("href"))
-                return True
-        return False
+            team_name = extract_row_details(row)[0]
+            if all(word in search_name for word in team_name.split()):
+                r.append(row.find_element_by_xpath(".//*[self::a]").get_attribute("href"))
+
+        if len(r) == 1:
+            driver.get(r[0])
+            return True
+        elif len(r) > 1:
+            print("Multiple team matches.")
+            return False
+        else:
+            print("No team match.")
+            return False
     except:
         print('Not selected!')

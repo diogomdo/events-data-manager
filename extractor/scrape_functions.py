@@ -10,7 +10,7 @@ from data import select_games_from_team, insert_op_name, insert_result_game, get
     get_op_id, insert_op_quick_link
 # Globals
 from extractor.db_element import DB_Element
-from extractor.op_element import OP_Element, Element_Type, cached_op_results
+from extractor.op_element import OP_Element, Element_Type
 from extractor.page import check_next_page, get_last_page, is_team_page, search_box_operation, is_no_results_page, \
     is_zero_results_page, team_match_results_first_page_url, select_team_page, get_current_url
 from extractor.utils import extract_row_details
@@ -30,33 +30,36 @@ class NoQuickLink(Exception):
     pass
 
 
-def evaluate_search_result(team_name):
+def evaluate_search_result(team_name, search_name):
     if is_team_page(driver=driver):
         return True
     elif is_no_results_page(driver=driver):
         return False
     elif is_zero_results_page(driver=driver):
         return False
-    elif select_team_page(team=team_name, driver=driver):
+    elif select_team_page(team=team_name, driver=driver, search_name=search_name):
         return True
 
 
 def search_team(team_name: str, team_id: str):
     try:
-        global op_team_name
         r = get_op_team_name(team_id=team_id)
         n = r if r else team_name
-        op_team_name = n
         index = len(n.split()) - 1
 
+        # TODO Refactor team search trials
+        # if team len > 1
+        # First loop removal the last string from team name until len == 0
+        # skip search if has just one element and string len <= 3
+        # Second loop removel the first string from team name until len == 0
+        # skip search if has just one element and string len <= 3
         while n:
             if is_team_page(driver):
                 driver.get(team_match_results_first_page_url(driver=webdriver))
                 return True
 
             search_box_operation(team=n, driver=driver)
-            if evaluate_search_result(team_name=n):
-                op_team_name = n
+            if evaluate_search_result(team_name=n, search_name=team_name):
                 return True
             else:
                 n = n.split()[index]
@@ -88,10 +91,38 @@ def navigator_stopper(match_date):
             raise NoMatchFound
 
 
-def solve_main_team_alias(table: list) -> str:
+def solve_main_team_alias(table: list, main_team_name: str) -> str:
     # Add mechanism to check the main team alias within couple rows to certify the alias.
     # can be 3 or 4 match rows, but it raise the separator problem.
+
+    # get game row with both teams
+    # get entries with bold tag
+    # infer which one has bold
+    # if both then check the one with similar name
+    # verify if the names with bold tag have more words on the right(already blindly adding) or in the left(beginning)
     name = ""
+    home_team = ""
+    visitor_team = ""
+    bold_teams = []
+    teams_match = table[1].find_elements_by_css_selector("td[class='name table-participant']")[0].text
+    teams_list = teams_match.split(" - ")
+
+    for t in table[1].find_elements_by_css_selector("span[class='bold']"):
+        bold_teams.append(t.text)
+
+    if len(bold_teams) == 0:
+        raise Exception
+    elif len(bold_teams) == 1:
+        for i, team in enumerate(teams_list):
+            if bold_teams[0] in team:
+                home_team = teams_list[i]
+                visitor_team = teams_list[abs(i-1)]
+    else:
+        for team in teams_list:
+            initials = [x[0] for x in bold_teams]
+            if any(init in team for init in initials):
+                print(team)
+
     for e in table[1].find_elements_by_css_selector("span[class='bold']"):
         name = name + " " + e.text
     return name
@@ -109,7 +140,7 @@ def navigator_page(match: DB_Element) -> Union[OP_Element, bool]:
             '/html/body/div[1]/div/div[2]/div[6]/div[1]/div/div[1]/div[2]/div[1]/div/table/tbody/tr')
 
         # solve main team alias
-        main_team_op_name = solve_main_team_alias(table_rows)
+        main_team_op_name = solve_main_team_alias(table=table_rows, main_team_name=match.main_team_name)
 
         for row in table_rows:
             element = OP_Element(element_details=extract_row_details(row), main_team=main_team_op_name.strip(), page=page)
@@ -209,6 +240,7 @@ def verify_in_cached_results(match: DB_Element) -> bool:
 
 def scrape_search_result():
     global driver
+    global cached_op_results
 
     options = Options()
     options.add_argument("--headless")
