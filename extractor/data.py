@@ -54,7 +54,7 @@ def select_games_from_team(team_id):
             for row in rows:
                 matches_list.append(DB_Element(db_data=row))
 
-        print(matches_list)
+        # print(matches_list)
         return matches_list
 
 

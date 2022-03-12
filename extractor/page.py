@@ -1,4 +1,3 @@
-import difflib
 import re
 
 from selenium.webdriver.support.select import Select

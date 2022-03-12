@@ -1,3 +1,4 @@
+import logging
 import time
 from typing import Union
 
@@ -8,12 +9,16 @@ from webdriver_manager.firefox import GeckoDriverManager
 
 from data import select_games_from_team, insert_op_name, insert_result_game, get_op_team_name, get_teams_with_games, \
     get_op_id, insert_op_quick_link
-# Globals
 from extractor.db_element import DB_Element
 from extractor.op_element import OP_Element, Element_Type
 from extractor.page import check_next_page, get_last_page, is_team_page, search_box_operation, is_no_results_page, \
     is_zero_results_page, team_match_results_first_page_url, select_team_page, get_current_url
 from extractor.utils import extract_row_details
+
+logging.basicConfig(
+    format='%(asctime)s %(levelname)-8s %(message)s',
+    level=logging.INFO,
+    datefmt='%Y-%m-%d %H:%M:%S')
 
 op_team_name = ''
 op_opponent_team_name = ''
@@ -22,11 +27,12 @@ match_result = ''
 
 
 class NoMatchFound(Exception):
+    logging.warning("No match was found for this event!")
     pass
 
 
 class NoQuickLink(Exception):
-    print("No quick link for this team!")
+    logging.warning("No quick link for this team!")
     pass
 
 
@@ -65,10 +71,10 @@ def search_team(team_name: str, team_id: str):
                 n = n.split()[index]
                 index = index - 1
 
-        print("Nothing else to do with this team.")
+        logging.warning("Nothing else to do with this team.")
         return False
     except:
-        print('Team not found!')
+        logging.warning('Team "{}" with id: "{}" not found in odds portal search!'.format(team_name, team_id))
         return False
 
 
@@ -79,7 +85,7 @@ def is_element_in_cache(element):
 def event_has_correspondence(match: DB_Element) -> Union[OP_Element, bool]:
     for op_match in cached_op_results:
         if match.match_date_time == op_match.date:
-            print("Date matched for event: " + op_match.teams)
+            logging.info("Date matched '{}' for event: {}".format(op_match.date, op_match.teams))
             return op_match
     else:
         return False
@@ -116,12 +122,12 @@ def solve_main_team_alias(table: list, main_team_name: str) -> str:
         for i, team in enumerate(teams_list):
             if bold_teams[0] in team:
                 home_team = teams_list[i]
-                visitor_team = teams_list[abs(i-1)]
+                visitor_team = teams_list[abs(i - 1)]
     else:
         for team in teams_list:
             initials = [x[0] for x in bold_teams]
             if any(init in team for init in initials):
-                print(team)
+                logging.info("Odds portal team alias: '{}' for '{}'.".format(team, main_team_name))
 
     for e in table[1].find_elements_by_css_selector("span[class='bold']"):
         name = name + " " + e.text
@@ -143,7 +149,8 @@ def navigator_page(match: DB_Element) -> Union[OP_Element, bool]:
         main_team_op_name = solve_main_team_alias(table=table_rows, main_team_name=match.main_team_name)
 
         for row in table_rows:
-            element = OP_Element(element_details=extract_row_details(row), main_team=main_team_op_name.strip(), page=page)
+            element = OP_Element(element_details=extract_row_details(row), main_team=main_team_op_name.strip(),
+                                 page=page)
             if element.type is not Element_Type.SEPARATOR:
                 if not is_element_in_cache(element):
                     cached_op_results.append(element)
@@ -159,12 +166,13 @@ def navigator_page(match: DB_Element) -> Union[OP_Element, bool]:
 
 
 def save_data(db_match: DB_Element, op_match: OP_Element = None):
-    print(op_match)
-    print(db_match)
+    logging.info("Result game id: '{}' with teams: '{}' with result {}".format(db_match.game_id, op_match.teams,
+                                                                               op_match.result))
     if op_match.main_team_name and op_match.opposition_name and op_match.result:
         insert_op_name(op_team_name=op_match.main_team_name, team_id=db_match.main_team_id)
         insert_op_name(op_team_name=op_match.opposition_name, team_id=db_match.opponent_id)
         insert_result_game(game_id=db_match.game_id, result=op_match.result)
+        logging.info("Saved with success!")
 
 
 def load_games():
@@ -180,10 +188,12 @@ def save_team_quick_link(team_id, quick_link):
 
 
 def by_quick_link(match: DB_Element) -> bool:
+    logging.info("Accessing team '{}' with id '{}' page by quicklink.".format(match.main_team_name, match.main_team_id))
     op_id = get_op_id(team_id=match.main_team_id)
     if not op_id:
         raise NoQuickLink
 
+    logging.info("Quicklink: '{}'".format(op_id))
     link = "https://www.oddsportal.com/search/results/" + op_id + "/"
     if ":" not in op_id:
         link = link + "soccer/"
@@ -191,15 +201,14 @@ def by_quick_link(match: DB_Element) -> bool:
     driver.get(link)
 
     if is_team_page(driver=driver):
-        print("In team page.")
+        logging.info("Accessed with success!")
 
         result = navigator_page(match=match)
         if result:
             save_data(db_match=match, op_match=result)
             return True
     else:
-        print("Quick link not sufficient.")
-        return False
+        raise NoQuickLink
 
 
 def resolve_quick_link() -> str:
@@ -213,7 +222,7 @@ def resolve_quick_link() -> str:
 
 def by_search_box(match: DB_Element) -> bool:
     if search_team(team_name=match.main_team_name, team_id=match.main_team_id):
-        print("In team page.")
+        logging.info("In team page.")
 
         # TODO Adjust the quick link scrap. Index may vary with the kind of quick link in url
         quick_link = resolve_quick_link()
@@ -224,7 +233,7 @@ def by_search_box(match: DB_Element) -> bool:
             save_data(db_match=match, op_match=result)
             return True
     else:
-        print("Run ended for team: {}".format(match.main_team_name))
+        logging.warning("Run ended for team: {}".format(match.main_team_name))
         return False
 
 
@@ -248,6 +257,7 @@ def scrape_search_result():
     driver = webdriver.Firefox(executable_path=GeckoDriverManager().install())
     # webdriver.Firefox(options=options)
 
+    logging.info("Scrape results started!")
     link = 'https://www.oddsportal.com/results/#soccer'
     driver.get(link)
     time.sleep(5)
@@ -255,11 +265,12 @@ def scrape_search_result():
     team_ids = get_teams_with_games()
 
     for match_id in team_ids:
+        logging.info("Total number of teams to scrap: '{}'.".format(len(team_ids)))
         team_matches = load_team_matches(match_id[0])
         driver.get(link)
 
         cached_op_results = []
-
+        logging.info("Start scrape for team id '{}' with '{}' matches.".format(match_id[0], len(team_matches)))
         for match in team_matches:
             if cached_op_results:
                 if verify_in_cached_results(match=match):
@@ -268,13 +279,14 @@ def scrape_search_result():
                 if by_quick_link(match=match):
                     continue
             except NoMatchFound:
-                print("No match was found for this event!")
                 continue
             except NoQuickLink:
                 pass
 
             if by_search_box(match=match):
                 continue
+            else:
+                break
 
 
 scrape_search_result()
