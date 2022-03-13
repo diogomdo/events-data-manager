@@ -13,7 +13,7 @@ from extractor.db_element import DB_Element
 from extractor.op_element import OP_Element, Element_Type
 from extractor.page import check_next_page, get_last_page, is_team_page, search_box_operation, is_no_results_page, \
     is_zero_results_page, team_match_results_first_page_url, select_team_page, get_current_url
-from extractor.utils import extract_row_details
+from extractor.utils import extract_row_details, get_combination_list
 
 logging.basicConfig(
     format='%(asctime)s %(levelname)-8s %(message)s',
@@ -53,12 +53,11 @@ def search_team(team_name: str, team_id: str):
         n = r if r else team_name
         index = len(n.split()) - 1
 
+        search_terms = get_combination_list(team_name=n)
+
         # TODO Refactor team search trials
-        # if team len > 1
-        # First loop removal the last string from team name until len == 0
-        # skip search if has just one element and string len <= 3
-        # Second loop removel the first string from team name until len == 0
-        # skip search if has just one element and string len <= 3
+        # with the search terms, run a for loop
+        # refactor the while loop
         while n:
             if is_team_page(driver):
                 driver.get(team_match_results_first_page_url(driver=webdriver))
@@ -136,11 +135,13 @@ def solve_main_team_alias(table: list, main_team_name: str) -> str:
 
 def navigator_page(match: DB_Element) -> Union[OP_Element, bool]:
     result_match = True
-    page: int = 1
+    page: int = 0
     last_page_number: int = get_last_page(driver=driver)
-    while result_match:
-        if page > last_page_number:
-            raise NoMatchFound
+    if last_page_number > 0:
+        page = 1
+    while page <= last_page_number:
+        # if page > last_page_number:
+        #     raise NoMatchFound
 
         table_rows = driver.find_elements_by_xpath(
             '/html/body/div[1]/div/div[2]/div[6]/div[1]/div/div[1]/div[2]/div[1]/div/table/tbody/tr')
@@ -162,7 +163,9 @@ def navigator_page(match: DB_Element) -> Union[OP_Element, bool]:
                 navigator_stopper(match_date=match.match_date_time)
                 page = page + 1
                 check_next_page(driver=driver)
-    return False
+    else:
+        raise NoMatchFound
+    # return False
 
 
 def save_data(db_match: DB_Element, op_match: OP_Element = None):
@@ -188,7 +191,7 @@ def save_team_quick_link(team_id, quick_link):
 
 
 def by_quick_link(match: DB_Element) -> bool:
-    logging.info("Accessing team '{}' with id '{}' page by quicklink.".format(match.main_team_name, match.main_team_id))
+    logging.info("Checking if team '{}' with id '{}' has quicklink.".format(match.main_team_name, match.main_team_id))
     op_id = get_op_id(team_id=match.main_team_id)
     if not op_id:
         raise NoQuickLink

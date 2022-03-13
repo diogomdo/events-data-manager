@@ -1,8 +1,10 @@
+import logging
 import re
 
+from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.support.select import Select
 
-from extractor.utils import extract_row_details
+from extractor.utils import extract_row_details, strip_accents
 
 
 def check_next_page(driver):
@@ -12,10 +14,14 @@ def check_next_page(driver):
 
 
 def get_last_page(driver) -> int:
-    pagination_section = driver.find_element_by_xpath("//*[@id='pagination']")
-    last_page_url = pagination_section.find_elements_by_tag_name("a")[-1].get_attribute("href")
-    last_page_number = last_page_url.split("/")[-2]
-    return int(last_page_number)
+    try:
+        pagination_section = driver.find_element_by_xpath("//*[@id='pagination']")
+        last_page_url = pagination_section.find_elements_by_tag_name("a")[-1].get_attribute("href")
+        last_page_number = last_page_url.split("/")[-2]
+        return int(last_page_number)
+    except NoSuchElementException:
+        logging.warning("Results page without pagination.")
+        return 0
 
 
 def is_team_page(driver):
@@ -83,7 +89,8 @@ def select_team_page(search_name, team, driver):
 
         r = []
         for row in table_rows:
-            team_name = extract_row_details(row)[0]
+            team_name = strip_accents(extract_row_details(row)[0])
+            search_name = strip_accents(search_name)
             if all(word in search_name for word in team_name.split()):
                 r.append(row.find_element_by_xpath(".//*[self::a]").get_attribute("href"))
 
