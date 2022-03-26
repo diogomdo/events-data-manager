@@ -1,7 +1,9 @@
+import logging
 import sqlite3
 from sqlite3 import Error
 
 from extractor.db_element import DB_Element
+from model.team_db import Team_db
 
 PATH = "/Users/diogo.oliveira/dev/own/events-data-manager/database/events-data.db"
 """
@@ -32,6 +34,22 @@ def select_all_teams():
     rows = cur.fetchall()
     for row in rows:
         print(row)
+
+
+def get_teams_without_alias():
+    conn = create_connection()
+
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM teams WHERE op_id is NULL or op_id is NULL")
+
+    rows = cur.fetchall()
+    logging.info("Total teams with missing alias: {}".format(len(rows)))
+    matches_list = []
+    if rows:
+        for row in rows:
+            matches_list.append(Team_db(db_data=row))
+
+    return matches_list
 
 
 def select_games_from_team(team_id):
@@ -139,3 +157,16 @@ def get_teams_with_games():
         cur.execute("SELECT DISTINCT home_team from games where result IS NULL ORDER BY home_team")
         result = cur.fetchall()
         return result if result is not None else False
+
+
+def delete_duplicate_entries():
+    conn = create_connection()
+
+    with conn:
+        cur = conn.cursor()
+
+        cur.execute("SELECT  DISTINCT rowID, COUNT(*) c FROM teams GROUP BY id HAVING c = 1;")
+        result = cur.fetchall()
+        print(len(result))
+        for i in result:
+            cur.execute("DELETE FROM teams WHERE rowid = ?", (i[0],))
