@@ -77,7 +77,7 @@ def extract_result(data):
             return "L"
     except Exception:
         print("Invalid result format from data: '{}'.".format(data))
-        return result
+        return result[0]
 
 
 def convert_date(date: str) -> datetime:

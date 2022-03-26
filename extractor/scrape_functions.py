@@ -1,4 +1,6 @@
+import itertools
 import logging
+import re
 import time
 from typing import Union
 
@@ -13,7 +15,7 @@ from extractor.db_element import DB_Element
 from extractor.op_element import OP_Element, Element_Type
 from extractor.page import check_next_page, get_last_page, is_team_page, search_box_operation, is_no_results_page, \
     is_zero_results_page, team_match_results_first_page_url, select_team_page, get_current_url
-from extractor.utils import extract_row_details, get_combination_list
+from extractor.utils import extract_row_details, get_combination_list, get_main_team_name_by_common
 
 logging.basicConfig(
     format='%(asctime)s %(levelname)-8s %(message)s',
@@ -116,7 +118,8 @@ def solve_main_team_alias(table: list, main_team_name: str) -> str:
         bold_teams.append(t.text)
 
     if len(bold_teams) == 0:
-        raise Exception
+        return get_main_team_name_by_common(rows=table[:10])
+        # raise Exception
     elif len(bold_teams) == 1:
         for i, team in enumerate(teams_list):
             if bold_teams[0] in team:

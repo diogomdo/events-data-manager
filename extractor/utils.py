@@ -12,6 +12,7 @@
 # odds_ = pd.read_csv(r'compiled_data/odds-export-08-12-2021_19:14:51.csv', sep=';')
 # odds_.to_sql('odds', con, if_exists='append', index=False)
 import logging
+import re
 import unicodedata
 from itertools import combinations
 
@@ -35,3 +36,13 @@ def get_combination_list(team_name: str) -> list:
 def strip_accents(s):
     return ''.join(c for c in unicodedata.normalize('NFD', s)
                    if unicodedata.category(c) != 'Mn')
+
+
+def get_main_team_name_by_common(rows):
+    lst = []
+    for i in rows:
+        if "Soccer" not in i.text:
+            for b in i.find_elements_by_css_selector("td[class='name table-participant']")[0].text.split(" - "):
+                x = re.search(r"^[^(]*", b)[0].strip()
+                lst.append(x)
+    return max(set(lst), key=lst.count)
